@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CBT Tool - Manual Mode</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./script.js"></script>
+</head>
+<body>
+    <header>
+        <h1>CBT Examination Tool</h1>
+        <div class="theme-toggle" onclick="toggleTheme()">
+            <span id="light-toggle" class="active">☀️</span>
+            <span id="dark-toggle">🌙</span>
+        </div>
+    </header>
+
+    <div id="work-area">
+        <div class="glass-card">
+            <fieldset>
+                <legend>Enter Examination Details</legend>
+                
+                <div class="form-group">
+                    <span class="instruction-text">Number of questions</span>
+                    <input type="number" min="1" id="question-count" placeholder="Enter number of questions">
+                </div>
+                
+                <div class="form-group">
+                    <span class="instruction-text">Examination duration (minutes)</span>
+                    <input type="number" min="1" id="time" placeholder="Enter duration in minutes">
+                </div>
+                
+                <div class="form-group">
+                    <span class="instruction-text">Examination name</span>
+                    <input type="text" id="exam-name" placeholder="Enter exam name">
+                </div>
+                
+                <div class="form-actions">
+                    <button id="exam-detail-submit" class="btn" onclick="testFormat()">Proceed</button>
+                    <button class="btn btn-outline" onclick="window.location.href='index.html'">Back</button>
+                </div>
+            </fieldset>
+        </div>
+    </div>
+    
+    <div id="timer">Time Remaining: <span id="time-display">--:--</span></div>
+
+    <script>
+        function toggleTheme() {
+            const body = document.body;
+            const lightToggle = document.getElementById('light-toggle');
+            const darkToggle = document.getElementById('dark-toggle');
+            
+            if (body.getAttribute('data-theme') === 'dark') {
+                body.removeAttribute('data-theme');
+                lightToggle.classList.add('active');
+                darkToggle.classList.remove('active');
+                localStorage.setItem('theme', 'light');
+            } else {
+                body.setAttribute('data-theme', 'dark');
+                darkToggle.classList.add('active');
+                lightToggle.classList.remove('active');
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+        
+        // Check for saved theme preference
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedTheme = localStorage.getItem('theme');
+            const lightToggle = document.getElementById('light-toggle');
+            const darkToggle = document.getElementById('dark-toggle');
+            
+            if (savedTheme === 'dark') {
+                document.body.setAttribute('data-theme', 'dark');
+                darkToggle.classList.add('active');
+                lightToggle.classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html> 

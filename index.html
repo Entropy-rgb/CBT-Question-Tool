@@ -1,26 +1,74 @@
-<html>
-<title>Nicum CBT Tool (Beta Re-write)</title>
-
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <link href='https://fonts.googleapis.com/css?family=Rubik Glitch' rel='stylesheet'>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CBT Examination Tool</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./styles.css">
     <script src="./script.js"></script>
+    <style>
+        .mode-container {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 50px;
+        }
+        
+        .mode-option {
+            width: 300px;
+            padding: 30px;
+            border: 2px solid #333;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .mode-option:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        
+        .mode-option h2 {
+            margin-top: 0;
+        }
+        
+        .mode-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+    </style>
 </head>
 
 <body>
-    <h1>Nicum CBT Tool (Beta Re-write)</h1>
+    <header>
+        <h1>CBT Examination Tool</h1>
+        <div class="theme-toggle" onclick="toggleTheme()">
+            <span id="light-toggle" class="active">☀️</span>
+            <span id="dark-toggle">🌙</span>
+        </div>
+    </header>
+
     <div id="work-area">
-        <fieldset>
-            <legend>Enter the details of the test</legend>
-            <span class="instruction-text">Enter the number of questions : </span><input type="number" min="1"
-                id="question-count"> <br>
-            <span class="instruction-text">Enter the number of minutes the exam lasts : </span><input type="number"
-                min="1" id="time"> <br>
-            <span class="instruction-text">Enter the name of the exam : </span><input type="text" id="exam-name"> <br>
-            <button id="exam-detail-submit" class="button" onclick="testFormat()">Procced</button>
-        </fieldset>
+        <div class="glass-card">
+            <h2>Select Examination Mode</h2>
+            <p class="instruction-text">Choose how you would like to take your exam</p>
+            
+            <div class="mode-container">
+                <div class="mode-option" onclick="window.location.href='screenshot-mode.html'">
+                    <div class="mode-icon">📷</div>
+                    <h2>Screenshot Mode</h2>
+                    <p>Upload screenshots of your questions for a visual exam experience.</p>
+                </div>
+                <div class="mode-option" onclick="window.location.href='manual-mode.html'">
+                    <div class="mode-icon">📝</div>
+                    <h2>Manual Mode</h2>
+                    <p>Manually enter exam details without screenshots.</p>
+                </div>
+            </div>
+        </div>
     </div>
-    <div id="timer">Time Remaining: <span id="time">--:--</span></div>
 </body>
 
 </html>
