@@ -7,7 +7,10 @@ var questionTypes = [];
 var questionScreenshots = [];
 var currentQuestion = 1;
 var questionStatus = []; // Tracks status: 'not-visited', 'answered', 'not-answered', 'marked', 'answered-marked'
+var userResponses = []; // Array to store user responses
 var timerInterval;
+var currentUploadQuestion = 1;
+var totalQuestionsToUpload = 0;
 
 // Initialize theme based on localStorage
 function initTheme() {
@@ -59,6 +62,9 @@ function testFormat() {
     // Initialize question status array
     questionStatus = Array(exam.questioncount).fill('not-visited');
     
+    // Initialize user responses array
+    userResponses = Array(exam.questioncount).fill(null);
+    
     typeSelector();
 }
 
@@ -89,6 +95,9 @@ function processScreenshots() {
     
     // Initialize question status array
     questionStatus = Array(exam.questioncount).fill('not-visited');
+    
+    // Initialize user responses array
+    userResponses = Array(exam.questioncount).fill(null);
     
     // Store screenshots
     questionScreenshots = [];
@@ -314,6 +323,9 @@ function renderQuestionPalette() {
 function navigateQuestion(direction) {
     updateQuestionStatus();
     
+    // Make sure to save the current response before navigating
+    updateUserResponse();
+    
     if (direction === 'next' && currentQuestion < exam.questioncount) {
         currentQuestion++;
         
@@ -332,6 +344,10 @@ function goToQuestion(qNum) {
     if (qNum < 1 || qNum > exam.questioncount) return;
     
     updateQuestionStatus();
+    
+    // Make sure to save the current response before navigating
+    updateUserResponse();
+    
     currentQuestion = qNum;
     
     // If this question hasn't been visited yet, mark it as not-answered
@@ -417,6 +433,9 @@ function addAnswerEventListeners() {
                     } else if (currentStatus !== 'answered-marked') {
                         questionStatus[currentQuestion-1] = 'answered';
                     }
+                    
+                    // Update the userResponses for this question
+                    updateUserResponse();
                 });
             }
         }
@@ -434,6 +453,9 @@ function addAnswerEventListeners() {
                 } else if (currentStatus === 'answered-marked' && !hasValue) {
                     questionStatus[currentQuestion-1] = 'marked';
                 }
+                
+                // Update the userResponses for this question
+                updateUserResponse();
             });
         }
     }
@@ -454,6 +476,18 @@ function clearCurrentResponse() {
         const element = document.getElementById(`question-${currentQuestion}`);
         if (element) {
             element.value = '';
+        }
+    }
+    
+    // Update the userResponses to clear this question's response
+    const qIndex = currentQuestion - 1;
+    if (userResponses[qIndex]) {
+        if (qType === 'single-correct') {
+            userResponses[qIndex].answer = null;
+        } else if (qType === 'multi-correct') {
+            userResponses[qIndex].answers = [];
+        } else if (qType === 'numerical') {
+            userResponses[qIndex].value = '';
         }
     }
     
@@ -498,8 +532,9 @@ function goBackFromStageOne() {
 function submit() {
     clearInterval(timerInterval);
     
-    // Update status for last question if needed
+    // Update status and response for the last question
     updateQuestionStatus();
+    updateUserResponse();
     
     var workArea = document.getElementById("work-area");
     
@@ -522,9 +557,9 @@ function submit() {
     summaryContent += `YOUR RESPONSES:\n`;
     
     // HTML for display
-    var responses = `<div class="glass-card"><h2>Exam Submission Summary</h2>`;
+    var summaryHTML = `<div class="glass-card"><h2>Exam Submission Summary</h2>`;
     
-    responses += `
+    summaryHTML += `
         <div style="margin-bottom: 20px;">
             <p><strong>Exam:</strong> ${exam.name}</p>
             <p><strong>Total Questions:</strong> ${exam.questioncount}</p>
@@ -537,82 +572,47 @@ function submit() {
         <h3>Your Responses</h3>
     `;
     
-    // Add individual responses
+    // Add individual responses using the userResponses array
     for (var i = 0; i < exam.questioncount; i++) {
         const qNum = i + 1;
         const qType = questionTypes[i];
+        const response = userResponses[i];
         
-        responses += `<div class="response-item"><b>Question ${qNum}: </b>`;
+        summaryHTML += `<div class="response-item"><b>Question ${qNum}: </b>`;
         summaryContent += `Question ${qNum}: `;
         
         if (qType === "single-correct") {
-            let answered = false;
-            const options = ['A', 'B', 'C', 'D'];
-            
-            for (let option of options) {
-                try {
-                    const element = document.getElementById(`question-${qNum}-${option}`);
-                    if (element && element.checked) {
-                        responses += `<span class="response-answer">${option}</span>`;
-                        summaryContent += `${option}\n`;
-                        answered = true;
-                        break;
-                    }
-                } catch (error) {
-                    console.log(`Error accessing question ${qNum} option ${option}:`, error);
-                }
-            }
-            
-            if (!answered) {
-                responses += '<span class="response-unanswered">NOT ATTEMPTED</span>';
+            if (response && response.answer) {
+                summaryHTML += `<span class="response-answer">${response.answer}</span>`;
+                summaryContent += `${response.answer}\n`;
+            } else {
+                summaryHTML += '<span class="response-unanswered">NOT ATTEMPTED</span>';
                 summaryContent += 'NOT ATTEMPTED\n';
             }
         } else if (qType === "multi-correct") {
-            let answered = false;
-            const options = ['A', 'B', 'C', 'D'];
-            let answerText = '';
-            
-            for (let option of options) {
-                try {
-                    const element = document.getElementById(`question-${qNum}-${option}`);
-                    if (element && element.checked) {
-                        responses += `<span class="response-answer">${option} </span>`;
-                        answerText += `${option} `;
-                        answered = true;
-                    }
-                } catch (error) {
-                    console.log(`Error accessing question ${qNum} option ${option}:`, error);
-                }
-            }
-            
-            if (!answered) {
-                responses += '<span class="response-unanswered">NOT ATTEMPTED</span>';
-                summaryContent += 'NOT ATTEMPTED\n';
+            if (response && response.answers && response.answers.length > 0) {
+                const answerStr = response.answers.join(' ');
+                summaryHTML += `<span class="response-answer">${answerStr}</span>`;
+                summaryContent += `${answerStr}\n`;
             } else {
-                summaryContent += `${answerText.trim()}\n`;
+                summaryHTML += '<span class="response-unanswered">NOT ATTEMPTED</span>';
+                summaryContent += 'NOT ATTEMPTED\n';
             }
         } else if (qType === "numerical") {
-            try {
-                const element = document.getElementById(`question-${qNum}`);
-                if (element && element.value !== "") {
-                    responses += `<span class="response-answer">${element.value}</span>`;
-                    summaryContent += `${element.value}\n`;
-                } else {
-                    responses += '<span class="response-unanswered">NOT ATTEMPTED</span>';
-                    summaryContent += 'NOT ATTEMPTED\n';
-                }
-            } catch (error) {
-                console.log(`Error accessing numerical question ${qNum}:`, error);
-                responses += '<span class="response-unanswered">NOT ATTEMPTED</span>';
+            if (response && response.value && response.value !== '') {
+                summaryHTML += `<span class="response-answer">${response.value}</span>`;
+                summaryContent += `${response.value}\n`;
+            } else {
+                summaryHTML += '<span class="response-unanswered">NOT ATTEMPTED</span>';
                 summaryContent += 'NOT ATTEMPTED\n';
             }
         }
         
-        responses += "</div>";
+        summaryHTML += "</div>";
     }
     
     // Add buttons for home and saving summary
-    responses += `
+    summaryHTML += `
         <div class="form-actions" style="margin-top: 20px;">
             <button class="btn" onclick="window.location.href='index.html'">Back to Home</button>
             <button class="btn" onclick="saveAsPDF()">Save as PDF</button>
@@ -623,7 +623,7 @@ function submit() {
     window.exportSummaryContent = summaryContent;
     window.exportSummaryTitle = exam.name.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'exam_summary';
     
-    workArea.innerHTML = responses;
+    workArea.innerHTML = summaryHTML;
 }
 
 function clearResponse(k, questionType) {
@@ -790,4 +790,178 @@ function saveAsText() {
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
     }, 100);
+}
+
+// New function to set up the question upload process
+function setupScreenshotQuestions() {
+    exam.name = document.getElementById("exam-name").value;
+    exam.time = parseInt(document.getElementById("time").value);
+    exam.questioncount = parseInt(document.getElementById("question-count").value);
+    
+    // Validate inputs
+    if (!exam.name || isNaN(exam.time) || isNaN(exam.questioncount) || exam.questioncount <= 0 || exam.time <= 0) {
+        alert("Please fill in all fields with valid values");
+        return;
+    }
+    
+    // Initialize variables for question upload
+    totalQuestionsToUpload = exam.questioncount;
+    currentUploadQuestion = 1;
+    questionScreenshots = [];
+    questionTypes = [];
+    questionStatus = Array(exam.questioncount).fill('not-visited');
+    userResponses = Array(exam.questioncount).fill(null);
+    
+    // Show the upload interface for the first question
+    showQuestionUploadInterface();
+}
+
+// Function to show the upload interface for the current question
+function showQuestionUploadInterface() {
+    var workArea = document.getElementById("work-area");
+    
+    var content = `
+        <div class="glass-card">
+            <h2>Upload Question ${currentUploadQuestion} of ${totalQuestionsToUpload}</h2>
+            
+            <div class="form-group">
+                <span class="instruction-text">Question Type</span>
+                <select id="current-question-type" class="question-type-select">
+                    <option value="single-correct">Single Option Correct</option>
+                    <option value="multi-correct">Multiple Options Correct</option>
+                    <option value="numerical">Numerical</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <span class="instruction-text">Upload Question Screenshot</span>
+                <input type="file" id="current-question-screenshot" accept="image/*">
+            </div>
+            
+            <div id="image-preview-container" style="margin: 15px 0; display: none;">
+                <p class="instruction-text">Preview:</p>
+                <img id="image-preview" style="max-width: 100%; border-radius: 8px; border: 1px solid var(--border-color);">
+            </div>
+            
+            <div class="form-actions">
+                <button class="btn" onclick="uploadCurrentQuestion()">Next Question</button>
+                <button class="btn btn-outline" onclick="window.location.href='index.html'">Cancel</button>
+            </div>
+        </div>
+    `;
+    
+    workArea.innerHTML = content;
+    
+    // Add event listener for image preview
+    document.getElementById('current-question-screenshot').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                document.getElementById('image-preview').src = event.target.result;
+                document.getElementById('image-preview-container').style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+}
+
+// Function to handle uploading the current question
+function uploadCurrentQuestion() {
+    const fileInput = document.getElementById('current-question-screenshot');
+    const questionType = document.getElementById('current-question-type').value;
+    
+    if (!fileInput.files || fileInput.files.length === 0) {
+        alert("Please select a screenshot for this question");
+        return;
+    }
+    
+    const file = fileInput.files[0];
+    
+    if (!file.type.match('image.*')) {
+        alert('Please upload only image files');
+        return;
+    }
+    
+    // Read the file
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        // Store the question data
+        questionScreenshots.push(e.target.result);
+        questionTypes.push(questionType);
+        
+        // Check if we're done or move to the next question
+        if (currentUploadQuestion >= totalQuestionsToUpload) {
+            finishQuestionUpload();
+        } else {
+            currentUploadQuestion++;
+            showQuestionUploadInterface();
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
+// Function to finish the upload process and start the exam
+function finishQuestionUpload() {
+    // Make sure all questions were uploaded
+    if (questionScreenshots.length !== totalQuestionsToUpload) {
+        alert("Error: Not all questions were uploaded. Please try again.");
+        return;
+    }
+    
+    // Set first question as current
+    currentQuestion = 1;
+    questionStatus[0] = 'not-answered';
+    
+    // Start the exam timer
+    startTimer(exam.time);
+    
+    // Render the exam interface
+    renderExamInterface();
+}
+
+// Add this new function to update the user response for the current question
+function updateUserResponse() {
+    const qType = questionTypes[currentQuestion-1];
+    const qIndex = currentQuestion - 1;
+    
+    // Initialize the response object if it doesn't exist
+    if (!userResponses[qIndex]) {
+        userResponses[qIndex] = {};
+    }
+    
+    if (qType === 'single-correct') {
+        // For single correct, store the selected option
+        const options = ['A', 'B', 'C', 'D'];
+        userResponses[qIndex].type = 'single-correct';
+        userResponses[qIndex].answer = null;
+        
+        for (let option of options) {
+            const element = document.getElementById(`question-${currentQuestion}-${option}`);
+            if (element && element.checked) {
+                userResponses[qIndex].answer = option;
+                break;
+            }
+        }
+    } else if (qType === 'multi-correct') {
+        // For multi-correct, store all selected options
+        const options = ['A', 'B', 'C', 'D'];
+        const selectedOptions = [];
+        
+        for (let option of options) {
+            const element = document.getElementById(`question-${currentQuestion}-${option}`);
+            if (element && element.checked) {
+                selectedOptions.push(option);
+            }
+        }
+        
+        userResponses[qIndex].type = 'multi-correct';
+        userResponses[qIndex].answers = selectedOptions;
+    } else if (qType === 'numerical') {
+        // For numerical, store the input value
+        const element = document.getElementById(`question-${currentQuestion}`);
+        
+        userResponses[qIndex].type = 'numerical';
+        userResponses[qIndex].value = element ? element.value : '';
+    }
 }

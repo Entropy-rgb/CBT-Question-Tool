@@ -37,14 +37,8 @@
                     <input type="text" id="exam-name" placeholder="Enter exam name">
                 </div>
                 
-                <div class="form-group">
-                    <span class="instruction-text">Upload question screenshots</span>
-                    <input type="file" id="question-screenshots" multiple accept="image/*">
-                    <p class="instruction-text" style="font-size: 0.85rem; margin-top: -10px;">Number of files should match number of questions</p>
-                </div>
-                
                 <div class="form-actions">
-                    <button id="exam-detail-submit" class="btn" onclick="processScreenshots()">Proceed</button>
+                    <button id="exam-detail-submit" class="btn" onclick="setupScreenshotQuestions()">Proceed</button>
                     <button class="btn btn-outline" onclick="window.location.href='index.html'">Back</button>
                 </div>
             </fieldset>
