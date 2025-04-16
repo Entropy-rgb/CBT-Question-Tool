@@ -67,14 +67,17 @@ document.addEventListener('DOMContentLoaded', initTheme);
 
 // Setup visibility change detection for tab switching
 document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'hidden' && examAnalytics.startTime) {
-        // Only log tab switches during the actual exam
+    // Only track tab switches if we're in an exam (has start time) and in screenshot mode
+    if (document.visibilityState === 'hidden' && examAnalytics.startTime && exam.mode === 'screenshot') {
         recordTabSwitch();
     }
 });
 
 // Function to record a tab switch security violation
 function recordTabSwitch() {
+    // Only record tab switches in screenshot mode
+    if (exam.mode !== 'screenshot') return;
+    
     securityViolations.tabSwitches++;
     securityViolations.lastViolationTime = new Date();
     
@@ -94,8 +97,8 @@ function recordTabSwitch() {
 
 // Function to show tab switch warning
 function showTabSwitchWarning() {
-    // Only show if we're in the exam (not during setup)
-    if (!examAnalytics.startTime) return;
+    // Only show if we're in the exam (not during setup) and in screenshot mode
+    if (!examAnalytics.startTime || exam.mode !== 'screenshot') return;
     
     // Create warning element if it doesn't exist
     let warningElement = document.getElementById('security-warning');
@@ -444,6 +447,7 @@ function testFormat() {
     exam.name = document.getElementById("exam-name").value;
     exam.time = parseInt(document.getElementById("time").value);
     exam.questioncount = parseInt(document.getElementById("question-count").value);
+    exam.mode = 'manual'; // Set mode to manual
     
     // Validate inputs
     if (!exam.name || isNaN(exam.time) || isNaN(exam.questioncount) || exam.questioncount <= 0 || exam.time <= 0) {
@@ -473,6 +477,7 @@ function processScreenshots() {
     exam.name = document.getElementById("exam-name").value;
     exam.time = parseInt(document.getElementById("time").value);
     exam.questioncount = parseInt(document.getElementById("question-count").value);
+    exam.mode = 'screenshot'; // Set mode to screenshot
     
     // Get uploaded files
     const fileInput = document.getElementById("question-screenshots");
@@ -974,36 +979,296 @@ function showReviewScreen() {
     const marked = questionStatus.filter(s => s === 'marked').length;
     const answeredMarked = questionStatus.filter(s => s === 'answered-marked').length;
     
-    var content = `
-        <div class="glass-card">
-            <h2>Review Your Answers</h2>
+    // Add CSS for the review screen
+    const reviewStyles = `
+        <style>
+            .review-container {
+                max-width: 900px;
+                margin: 0 auto;
+                padding: 20px;
+                border-radius: 12px;
+                box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+                background: var(--card-bg-color, #fff);
+                overflow: hidden;
+            }
             
-            <div class="review-stats">
-                <div class="stat-item">
+            .review-header {
+                margin-bottom: 25px;
+                border-bottom: 2px solid var(--primary-color, #3498db);
+                padding-bottom: 15px;
+                text-align: center;
+            }
+            
+            .review-header h2 {
+                margin: 0;
+                color: var(--heading-color, #2c3e50);
+                font-size: 1.8rem;
+            }
+            
+            .review-stats-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+                gap: 15px;
+                margin-bottom: 30px;
+            }
+            
+            .stat-card {
+                background: var(--secondary-bg-color, #f5f9ff);
+                border-radius: 8px;
+                padding: 15px;
+                text-align: center;
+                transition: transform 0.2s;
+                border-left: 4px solid transparent;
+            }
+            
+            .stat-card:hover {
+                transform: translateY(-3px);
+            }
+            
+            .stat-card.answered {
+                border-left-color: #4caf50;
+            }
+            
+            .stat-card.not-answered {
+                border-left-color: #f44336;
+            }
+            
+            .stat-card.not-visited {
+                border-left-color: #9e9e9e;
+            }
+            
+            .stat-card.marked {
+                border-left-color: #ff9800;
+            }
+            
+            .stat-card.answered-marked {
+                border-left-color: #9c27b0;
+            }
+            
+            .stat-value {
+                font-size: 2rem;
+                font-weight: bold;
+                display: block;
+                margin-bottom: 5px;
+                color: var(--text-color, #333);
+            }
+            
+            .stat-label {
+                font-size: 0.9rem;
+                color: var(--secondary-text-color, #666);
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            
+            .review-questions-container {
+                background: var(--secondary-bg-color, #f5f9ff);
+                border-radius: 8px;
+                padding: 20px;
+                margin-bottom: 25px;
+            }
+            
+            .review-questions-container h3 {
+                margin-top: 0;
+                margin-bottom: 15px;
+                color: var(--heading-color, #2c3e50);
+                font-size: 1.3rem;
+                border-bottom: 1px solid var(--border-color, #eaeaea);
+                padding-bottom: 10px;
+            }
+            
+            .question-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+                gap: 12px;
+            }
+            
+            .question-status-item {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 12px 8px;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.2s;
+                border: 1px solid var(--border-color, #eaeaea);
+                position: relative;
+                background: var(--card-bg-color, #fff);
+            }
+            
+            .question-status-item:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            }
+            
+            .question-status-item.answered {
+                background-color: rgba(76, 175, 80, 0.1);
+                border-color: rgba(76, 175, 80, 0.3);
+            }
+            
+            .question-status-item.not-answered {
+                background-color: rgba(244, 67, 54, 0.1);
+                border-color: rgba(244, 67, 54, 0.3);
+            }
+            
+            .question-status-item.not-visited {
+                background-color: rgba(158, 158, 158, 0.1);
+                border-color: rgba(158, 158, 158, 0.3);
+            }
+            
+            .question-status-item.marked {
+                background-color: rgba(255, 152, 0, 0.1);
+                border-color: rgba(255, 152, 0, 0.3);
+            }
+            
+            .question-status-item.answered-marked {
+                background-color: rgba(156, 39, 176, 0.1);
+                border-color: rgba(156, 39, 176, 0.3);
+            }
+            
+            .question-number {
+                font-weight: bold;
+                font-size: 1.2rem;
+                margin-bottom: 5px;
+                color: var(--heading-color, #2c3e50);
+            }
+            
+            .question-response {
+                font-size: 0.9rem;
+                color: var(--secondary-text-color, #666);
+                text-align: center;
+                word-break: break-word;
+            }
+            
+            .review-actions {
+                display: flex;
+                justify-content: center;
+                gap: 15px;
+                margin-top: 25px;
+            }
+            
+            .review-actions .btn {
+                min-width: 150px;
+                padding: 12px 20px;
+                font-weight: 500;
+            }
+            
+            .btn-primary {
+                background-color: var(--primary-color, #3498db);
+                color: white;
+            }
+            
+            .btn-secondary {
+                background-color: var(--secondary-color, #2c3e50);
+                color: white;
+            }
+            
+            .btn-outline {
+                background: transparent;
+                border: 1px solid var(--primary-color, #3498db);
+                color: var(--primary-color, #3498db);
+            }
+            
+            .status-indicator {
+                width: 10px;
+                height: 10px;
+                position: absolute;
+                top: 5px;
+                right: 5px;
+                border-radius: 50%;
+            }
+            
+            .status-indicator.answered {
+                background-color: #4caf50;
+            }
+            
+            .status-indicator.not-answered {
+                background-color: #f44336;
+            }
+            
+            .status-indicator.not-visited {
+                background-color: #9e9e9e;
+            }
+            
+            .status-indicator.marked {
+                background-color: #ff9800;
+            }
+            
+            .status-indicator.answered-marked {
+                background-color: #9c27b0;
+            }
+            
+            /* Dark mode compatibility */
+            body[data-theme="dark"] .review-container {
+                background: var(--card-bg-color, #2d2d2d);
+            }
+            
+            body[data-theme="dark"] .review-header h2 {
+                color: var(--heading-color, #e0e0e0);
+            }
+            
+            body[data-theme="dark"] .stat-card {
+                background: var(--secondary-bg-color, #3d3d3d);
+            }
+            
+            body[data-theme="dark"] .stat-value {
+                color: var(--text-color, #e0e0e0);
+            }
+            
+            body[data-theme="dark"] .stat-label {
+                color: var(--secondary-text-color, #aaa);
+            }
+            
+            body[data-theme="dark"] .review-questions-container {
+                background: var(--secondary-bg-color, #3d3d3d);
+            }
+            
+            body[data-theme="dark"] .question-status-item {
+                background: var(--card-bg-color, #2d2d2d);
+                border-color: var(--border-color, #444);
+            }
+            
+            body[data-theme="dark"] .question-number {
+                color: var(--heading-color, #e0e0e0);
+            }
+            
+            body[data-theme="dark"] .question-response {
+                color: var(--secondary-text-color, #aaa);
+            }
+        </style>
+    `;
+    
+    var content = reviewStyles + `
+        <div class="review-container">
+            <div class="review-header">
+                <h2>Review Your Answers</h2>
+            </div>
+            
+            <div class="review-stats-grid">
+                <div class="stat-card answered">
                     <span class="stat-value">${answered}</span>
                     <span class="stat-label">Answered</span>
                 </div>
-                <div class="stat-item">
+                <div class="stat-card not-answered">
                     <span class="stat-value">${notAnswered}</span>
                     <span class="stat-label">Not Answered</span>
                 </div>
-                <div class="stat-item">
+                <div class="stat-card not-visited">
                     <span class="stat-value">${notVisited}</span>
                     <span class="stat-label">Not Visited</span>
                 </div>
-                <div class="stat-item">
+                <div class="stat-card marked">
                     <span class="stat-value">${marked}</span>
                     <span class="stat-label">Marked for Review</span>
                 </div>
-                <div class="stat-item">
+                <div class="stat-card answered-marked">
                     <span class="stat-value">${answeredMarked}</span>
                     <span class="stat-label">Answered & Marked</span>
                 </div>
             </div>
             
-            <div class="review-questions">
+            <div class="review-questions-container">
                 <h3>Question Status</h3>
-                <div class="question-grid">
+                <div class="question-grid review-questions">
     `;
     
     // Add question status grid
@@ -1014,6 +1279,7 @@ function showReviewScreen() {
         
         content += `
             <div class="question-status-item ${status}" onclick="returnToQuestion(${qNum})">
+                <div class="status-indicator ${status}"></div>
                 <span class="question-number">${qNum}</span>
                 <span class="question-response">
         `;
@@ -1022,7 +1288,7 @@ function showReviewScreen() {
             if (response.type === 'single-correct' && response.answer) {
                 content += response.answer;
             } else if (response.type === 'multi-correct' && response.answers && response.answers.length > 0) {
-                content += response.answers.join(' ');
+                content += response.answers.join(', ');
             } else if (response.type === 'numerical' && response.value) {
                 content += response.value;
             } else {
@@ -1043,7 +1309,7 @@ function showReviewScreen() {
             </div>
             
             <div class="review-actions">
-                <button class="btn" onclick="returnToExam()">Return to Exam</button>
+                <button class="btn btn-outline" onclick="returnToExam()">Return to Exam</button>
                 <button class="btn btn-primary" onclick="submitFinal()">Submit Exam</button>
             </div>
         </div>
@@ -1263,7 +1529,6 @@ function typeSelector() {
     
     workArea.innerHTML = content;
 }
-
 // Function to save summary as PDF using jsPDF with enhanced visuals
 function saveAsPDF() {
     // First check if we need to load libraries
@@ -1858,6 +2123,7 @@ function setupScreenshotQuestions() {
     exam.name = document.getElementById("exam-name").value;
     exam.time = parseInt(document.getElementById("time").value);
     exam.questioncount = parseInt(document.getElementById("question-count").value);
+    exam.mode = 'screenshot'; // Set mode to screenshot
     
     // Validate inputs
     if (!exam.name || isNaN(exam.time) || isNaN(exam.questioncount) || exam.questioncount <= 0 || exam.time <= 0) {
@@ -2066,3 +2332,4 @@ function saveAsText() {
         window.URL.revokeObjectURL(url);
     }, 100);
 }
+
