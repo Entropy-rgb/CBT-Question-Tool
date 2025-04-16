@@ -12,6 +12,23 @@ var timerInterval;
 var currentUploadQuestion = 1;
 var totalQuestionsToUpload = 0;
 
+// Security tracking
+var securityViolations = {
+    tabSwitches: 0,
+    lastViolationTime: null,
+    logs: [],
+    maxWarnings: 3,
+    showWarnings: true
+};
+
+// Analytics tracking
+var examAnalytics = {
+    startTime: null,
+    questions: [], // Per-question analytics
+    totalTimeSpent: 0,
+    answerChanges: 0
+};
+
 // Initialize theme based on localStorage
 function initTheme() {
     const savedTheme = localStorage.getItem('theme');
@@ -48,6 +65,381 @@ function toggleTheme() {
 // Initialize theme when page loads
 document.addEventListener('DOMContentLoaded', initTheme);
 
+// Setup visibility change detection for tab switching
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden' && examAnalytics.startTime) {
+        // Only log tab switches during the actual exam
+        recordTabSwitch();
+    }
+});
+
+// Function to record a tab switch security violation
+function recordTabSwitch() {
+    securityViolations.tabSwitches++;
+    securityViolations.lastViolationTime = new Date();
+    
+    // Log the violation details
+    securityViolations.logs.push({
+        type: 'Tab Switch',
+        time: new Date().toLocaleTimeString(),
+        question: currentQuestion,
+        count: securityViolations.tabSwitches
+    });
+    
+    // Show warning if enabled and under max warnings
+    if (securityViolations.showWarnings && securityViolations.tabSwitches <= securityViolations.maxWarnings) {
+        showTabSwitchWarning();
+    }
+}
+
+// Function to show tab switch warning
+function showTabSwitchWarning() {
+    // Only show if we're in the exam (not during setup)
+    if (!examAnalytics.startTime) return;
+    
+    // Create warning element if it doesn't exist
+    let warningElement = document.getElementById('security-warning');
+    if (!warningElement) {
+        warningElement = document.createElement('div');
+        warningElement.id = 'security-warning';
+        warningElement.className = 'security-warning';
+        document.body.appendChild(warningElement);
+        
+        // Add CSS for the warning
+        const style = document.createElement('style');
+        style.textContent = `
+            .security-warning {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background-color: #ff3b30;
+                color: white;
+                padding: 15px 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                z-index: 1000;
+                animation: fadeIn 0.3s, fadeOut 0.3s 4.7s;
+                font-weight: bold;
+                max-width: 300px;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(-20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes fadeOut {
+                from { opacity: 1; transform: translateY(0); }
+                to { opacity: 0; transform: translateY(-20px); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    // Update warning message
+    warningElement.innerHTML = `
+        <div>⚠️ Tab switching detected!</div>
+        <div style="font-size: 0.9em; margin-top: 5px;">This activity has been logged. (${securityViolations.tabSwitches}/${securityViolations.maxWarnings})</div>
+    `;
+    
+    // Remove warning after 5 seconds
+    setTimeout(() => {
+        if (warningElement && warningElement.parentNode) {
+            warningElement.parentNode.removeChild(warningElement);
+        }
+    }, 5000);
+}
+
+// Initialize analytics data
+function initializeAnalytics() {
+    examAnalytics.startTime = new Date();
+    examAnalytics.totalTimeSpent = 0;
+    examAnalytics.answerChanges = 0;
+    examAnalytics.questions = [];
+    
+    // Create analytics object for each question
+    for (let i = 0; i < exam.questioncount; i++) {
+        examAnalytics.questions.push({
+            index: i,
+            timeSpent: 0,
+            visits: 0,
+            answerChanges: 0,
+            responses: [],
+            visitStartTime: null,
+            lastVisitTime: null
+        });
+    }
+}
+
+// Track question visit
+function recordQuestionVisit(questionIndex) {
+    const qAnalytics = examAnalytics.questions[questionIndex];
+    qAnalytics.visits++;
+    qAnalytics.lastVisitTime = new Date();
+    
+    // Record start time for this visit to track time spent
+    qAnalytics.visitStartTime = new Date();
+}
+
+// End question visit and update time spent
+function endQuestionVisit(questionIndex) {
+    const qAnalytics = examAnalytics.questions[questionIndex];
+    if (qAnalytics.visitStartTime) {
+        const now = new Date();
+        const timeSpent = (now - qAnalytics.visitStartTime) / 1000; // in seconds
+        qAnalytics.timeSpent += timeSpent;
+        qAnalytics.visitStartTime = null;
+    }
+}
+
+// Record response change
+function recordResponseChange(questionIndex, response) {
+    const qAnalytics = examAnalytics.questions[questionIndex];
+    qAnalytics.answerChanges++;
+    examAnalytics.answerChanges++;
+    
+    // Store response with timestamp
+    qAnalytics.responses.push({
+        value: response,
+        time: new Date()
+    });
+}
+
+// Generate analytics report
+function generateAnalyticsReport() {
+    // Calculate end time and total time
+    const endTime = new Date();
+    const totalDuration = (endTime - examAnalytics.startTime) / 1000; // in seconds
+    
+    // End timing for current question
+    if (currentQuestion) {
+        endQuestionVisit(currentQuestion - 1);
+    }
+    
+    // Gather statistics
+    let totalQuestionTime = 0;
+    let longestQuestion = { index: 0, time: 0 };
+    let mostRevisited = { index: 0, visits: 0 };
+    let mostChanged = { index: 0, changes: 0 };
+    
+    examAnalytics.questions.forEach((q, index) => {
+        totalQuestionTime += q.timeSpent;
+        
+        if (q.timeSpent > longestQuestion.time) {
+            longestQuestion = { index: index, time: q.timeSpent };
+        }
+        
+        if (q.visits > mostRevisited.visits) {
+            mostRevisited = { index: index, visits: q.visits };
+        }
+        
+        if (q.answerChanges > mostChanged.changes) {
+            mostChanged = { index: index, changes: q.answerChanges };
+        }
+    });
+    
+    // Round times to make them more readable
+    examAnalytics.questions.forEach(q => {
+        q.timeSpent = Math.round(q.timeSpent * 10) / 10;
+    });
+    
+    // Calculate time spent percentage for each question
+    const questionTimePercent = examAnalytics.questions.map(q => ({
+        index: q.index + 1,
+        timeSpent: q.timeSpent,
+        percent: Math.round((q.timeSpent / totalQuestionTime) * 100)
+    }));
+    
+    // Return the compiled report
+    return {
+        totalDuration: Math.round(totalDuration),
+        totalQuestionTime: Math.round(totalQuestionTime),
+        totalAnswerChanges: examAnalytics.answerChanges,
+        longestQuestion: {
+            number: longestQuestion.index + 1,
+            time: Math.round(longestQuestion.time * 10) / 10
+        },
+        mostRevisited: {
+            number: mostRevisited.index + 1,
+            visits: mostRevisited.visits
+        },
+        mostChanged: {
+            number: mostChanged.index + 1,
+            changes: mostChanged.changes
+        },
+        averageTimePerQuestion: Math.round((totalQuestionTime / exam.questioncount) * 10) / 10,
+        questionTimeDistribution: questionTimePercent,
+        tabSwitches: securityViolations.tabSwitches,
+        securityLogs: securityViolations.logs
+    };
+}
+
+// Function to create analytics visualization
+function createAnalyticsVisualization(analyticsData) {
+    // Create basic stats HTML first
+    const statsHTML = `
+        <div class="analytics-overview">
+            <h3>Exam Analytics</h3>
+            <div class="analytics-stats">
+                <p><strong>Total duration:</strong> ${analyticsData.totalDuration} seconds</p>
+                <p><strong>Average time per question:</strong> ${analyticsData.averageTimePerQuestion} seconds</p>
+                <p><strong>Total answer changes:</strong> ${analyticsData.totalAnswerChanges}</p>
+                <p><strong>Question taking most time:</strong> Question ${analyticsData.longestQuestion.number} (${analyticsData.longestQuestion.time} seconds)</p>
+                <p><strong>Most revisited question:</strong> Question ${analyticsData.mostRevisited.number} (${analyticsData.mostRevisited.visits} visits)</p>
+                <p><strong>Most changed answers:</strong> Question ${analyticsData.mostChanged.number} (${analyticsData.mostChanged.changes} changes)</p>
+            </div>
+        </div>
+    `;
+    
+    // Create a simple table-based visualization for time distribution
+    let tableHTML = '';
+    if (analyticsData.questionTimeDistribution && analyticsData.questionTimeDistribution.length > 0) {
+        tableHTML = `
+            <div class="time-distribution">
+                <h4>Time Distribution</h4>
+                <table class="analytics-table">
+                    <thead>
+                        <tr>
+                            <th>Question</th>
+                            <th>Time (seconds)</th>
+                            <th>Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        analyticsData.questionTimeDistribution.forEach(item => {
+            tableHTML += `
+                <tr>
+                    <td>Question ${item.index}</td>
+                    <td>${item.timeSpent}</td>
+                    <td>${item.percent}%</td>
+                </tr>
+            `;
+        });
+        
+        tableHTML += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+    
+    // Create security info if there were tab switches
+    let securityHTML = '';
+    if (analyticsData.tabSwitches > 0) {
+        securityHTML = `
+            <div class="security-summary">
+                <h4>Security Information</h4>
+                <p>Tab switches detected: <strong>${analyticsData.tabSwitches}</strong></p>
+            </div>
+        `;
+    }
+    
+    // Combine all sections
+    const analyticsHTML = `
+        <div class="analytics-container">
+            ${statsHTML}
+            ${tableHTML}
+            ${securityHTML}
+        </div>
+    `;
+    
+    // Simple, reliable CSS that will work across browsers
+    const analyticsStyles = `
+        <style>
+            .analytics-container {
+                margin: 20px 0;
+                padding: 15px;
+                background-color: #f5f5f5;
+                border-radius: 8px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            
+            .analytics-container h3 {
+                margin-top: 0;
+                color: #333;
+                border-bottom: 2px solid #2196F3;
+                padding-bottom: 8px;
+                margin-bottom: 15px;
+            }
+            
+            .analytics-container h4 {
+                margin-top: 20px;
+                margin-bottom: 10px;
+                color: #555;
+            }
+            
+            .analytics-stats {
+                line-height: 1.6;
+            }
+            
+            .analytics-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+                font-size: 0.9em;
+            }
+            
+            .analytics-table th, .analytics-table td {
+                padding: 8px 12px;
+                text-align: left;
+                border-bottom: 1px solid #ddd;
+            }
+            
+            .analytics-table th {
+                background-color: #eee;
+                font-weight: bold;
+            }
+            
+            .analytics-table tr:nth-child(even) {
+                background-color: #f9f9f9;
+            }
+            
+            .security-summary {
+                margin-top: 20px;
+                padding: 10px;
+                background-color: #fff3cd;
+                border-left: 4px solid #ffc107;
+                border-radius: 4px;
+            }
+            
+            /* Dark theme compatibility */
+            body[data-theme="dark"] .analytics-container {
+                background-color: #333;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            }
+            
+            body[data-theme="dark"] .analytics-container h3 {
+                color: #eee;
+                border-bottom-color: #64B5F6;
+            }
+            
+            body[data-theme="dark"] .analytics-container h4 {
+                color: #ccc;
+            }
+            
+            body[data-theme="dark"] .analytics-table th {
+                background-color: #444;
+            }
+            
+            body[data-theme="dark"] .analytics-table th, 
+            body[data-theme="dark"] .analytics-table td {
+                border-bottom-color: #555;
+            }
+            
+            body[data-theme="dark"] .analytics-table tr:nth-child(even) {
+                background-color: #3a3a3a;
+            }
+            
+            body[data-theme="dark"] .security-summary {
+                background-color: #45403c;
+                border-left-color: #ffb74d;
+            }
+        </style>
+    `;
+    
+    return analyticsStyles + analyticsHTML;
+}
+
 function testFormat() {
     exam.name = document.getElementById("exam-name").value;
     exam.time = parseInt(document.getElementById("time").value);
@@ -64,6 +456,15 @@ function testFormat() {
     
     // Initialize user responses array
     userResponses = Array(exam.questioncount).fill(null);
+    
+    // Reset security violations
+    securityViolations = {
+        tabSwitches: 0,
+        lastViolationTime: null,
+        logs: [],
+        maxWarnings: 3,
+        showWarnings: true
+    };
     
     typeSelector();
 }
@@ -124,6 +525,10 @@ function displayScreenshotExam() {
     // Set first question as current
     currentQuestion = 1;
     questionStatus[0] = 'not-answered';
+    
+    // Initialize analytics
+    initializeAnalytics();
+    recordQuestionVisit(0); // Start tracking first question
     
     // Start the exam timer
     startTimer(exam.time);
@@ -323,6 +728,9 @@ function renderQuestionPalette() {
 function navigateQuestion(direction) {
     updateQuestionStatus();
     
+    // Save analytics for current question
+    endQuestionVisit(currentQuestion - 1);
+    
     // Make sure to save the current response before navigating
     updateUserResponse();
     
@@ -337,6 +745,9 @@ function navigateQuestion(direction) {
         currentQuestion--;
     }
     
+    // Start tracking new current question
+    recordQuestionVisit(currentQuestion - 1);
+    
     renderExamInterface();
 }
 
@@ -344,6 +755,9 @@ function goToQuestion(qNum) {
     if (qNum < 1 || qNum > exam.questioncount) return;
     
     updateQuestionStatus();
+    
+    // Save analytics for current question
+    endQuestionVisit(currentQuestion - 1);
     
     // Make sure to save the current response before navigating
     updateUserResponse();
@@ -354,6 +768,9 @@ function goToQuestion(qNum) {
     if (questionStatus[currentQuestion-1] === 'not-visited') {
         questionStatus[currentQuestion-1] = 'not-answered';
     }
+    
+    // Start tracking new current question
+    recordQuestionVisit(currentQuestion - 1);
     
     renderExamInterface();
 }
@@ -505,7 +922,7 @@ function goBackFromStageOne() {
     var workArea = document.getElementById("work-area");
     workArea.innerHTML = `
     <div class="glass-card">
-        <fieldset>
+    <fieldset>
             <legend>Enter Examination Details</legend>
             
             <div class="form-group">
@@ -530,11 +947,117 @@ function goBackFromStageOne() {
 }
 
 function submit() {
-    clearInterval(timerInterval);
-    
     // Update status and response for the last question
     updateQuestionStatus();
     updateUserResponse();
+    
+    // Show review screen
+    showReviewScreen();
+}
+
+function showReviewScreen() {
+    var workArea = document.getElementById("work-area");
+    
+    // Calculate statistics
+    const answered = questionStatus.filter(s => s === 'answered').length;
+    const notAnswered = questionStatus.filter(s => s === 'not-answered').length;
+    const notVisited = questionStatus.filter(s => s === 'not-visited').length;
+    const marked = questionStatus.filter(s => s === 'marked').length;
+    const answeredMarked = questionStatus.filter(s => s === 'answered-marked').length;
+    
+    var content = `
+        <div class="glass-card">
+            <h2>Review Your Answers</h2>
+            
+            <div class="review-stats">
+                <div class="stat-item">
+                    <span class="stat-value">${answered}</span>
+                    <span class="stat-label">Answered</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">${notAnswered}</span>
+                    <span class="stat-label">Not Answered</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">${notVisited}</span>
+                    <span class="stat-label">Not Visited</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">${marked}</span>
+                    <span class="stat-label">Marked for Review</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">${answeredMarked}</span>
+                    <span class="stat-label">Answered & Marked</span>
+                </div>
+            </div>
+            
+            <div class="review-questions">
+                <h3>Question Status</h3>
+                <div class="question-grid">
+    `;
+    
+    // Add question status grid
+    for (var i = 0; i < exam.questioncount; i++) {
+        const qNum = i + 1;
+        const status = questionStatus[i];
+        const response = userResponses[i];
+        
+        content += `
+            <div class="question-status-item ${status}" onclick="returnToQuestion(${qNum})">
+                <span class="question-number">${qNum}</span>
+                <span class="question-response">
+        `;
+        
+        if (response) {
+            if (response.type === 'single-correct' && response.answer) {
+                content += response.answer;
+            } else if (response.type === 'multi-correct' && response.answers && response.answers.length > 0) {
+                content += response.answers.join(' ');
+            } else if (response.type === 'numerical' && response.value) {
+                content += response.value;
+            } else {
+                content += 'Not Attempted';
+            }
+        } else {
+            content += 'Not Attempted';
+        }
+        
+        content += `
+                </span>
+            </div>
+        `;
+    }
+    
+    content += `
+                </div>
+            </div>
+            
+            <div class="review-actions">
+                <button class="btn" onclick="returnToExam()">Return to Exam</button>
+                <button class="btn btn-primary" onclick="submitFinal()">Submit Exam</button>
+            </div>
+        </div>
+    `;
+    
+    workArea.innerHTML = content;
+}
+
+function returnToQuestion(qNum) {
+    currentQuestion = qNum;
+    renderExamInterface();
+}
+
+function returnToExam() {
+    renderExamInterface();
+}
+
+// Rename the existing submit function to submitFinal
+function submitFinal() {
+    clearInterval(timerInterval);
+    
+    // Generate analytics report
+    const analyticsReport = generateAnalyticsReport();
     
     var workArea = document.getElementById("work-area");
     
@@ -611,6 +1134,9 @@ function submit() {
         summaryHTML += "</div>";
     }
     
+    // Add exam analytics visualization
+    summaryHTML += createAnalyticsVisualization(analyticsReport);
+    
     // Add buttons for home and saving summary
     summaryHTML += `
         <div class="form-actions" style="margin-top: 20px;">
@@ -618,6 +1144,18 @@ function submit() {
             <button class="btn" onclick="saveAsPDF()">Save as PDF</button>
         </div>
     </div>`;
+    
+    // Add analytics to the summary content for PDF
+    summaryContent += `\nEXAM ANALYTICS:\n`;
+    summaryContent += `Total Duration: ${analyticsReport.totalDuration} seconds\n`;
+    summaryContent += `Average Time Per Question: ${analyticsReport.averageTimePerQuestion} seconds\n`;
+    summaryContent += `Question Taking Most Time: Question ${analyticsReport.longestQuestion.number} (${analyticsReport.longestQuestion.time} seconds)\n`;
+    summaryContent += `Most Revisited Question: Question ${analyticsReport.mostRevisited.number} (${analyticsReport.mostRevisited.visits} visits)\n`;
+    summaryContent += `Total Answer Changes: ${analyticsReport.totalAnswerChanges}\n`;
+    
+    if (analyticsReport.tabSwitches > 0) {
+        summaryContent += `Tab Switches Detected: ${analyticsReport.tabSwitches}\n`;
+    }
     
     // Store summary content in a global variable for the export functions
     window.exportSummaryContent = summaryContent;
@@ -677,6 +1215,10 @@ function handleTypes() {
     // Set first question as current
     currentQuestion = 1;
     
+    // Initialize analytics
+    initializeAnalytics();
+    recordQuestionVisit(0); // Start tracking first question
+    
     if (questionScreenshots && questionScreenshots.length > 0) {
         // Screenshot mode - don't start timer yet as it's already started in displayScreenshotExam
         displayScreenshotExam();
@@ -698,10 +1240,10 @@ function typeSelector() {
             <div class="form-group">
                 <span class="instruction-text">Question ${i}</span>
                 <select name="question-${i}" id="question-${i}" class="question-type-select">
-                    <option value="single-correct">Single Option Correct</option>
-                    <option value="multi-correct">Multiple Options Correct</option>
-                    <option value="numerical">Numerical</option>
-                </select>
+            <option value="single-correct">Single Option Correct</option>
+            <option value="multi-correct">Multiple Options Correct</option>
+            <option value="numerical">Numerical</option>
+        </select>
             </div>`;
     }
     
@@ -713,58 +1255,362 @@ function typeSelector() {
     workArea.innerHTML = content;
 }
 
-// Function to save summary as PDF using jsPDF
+// Function to save summary as PDF using jsPDF with enhanced visuals
 function saveAsPDF() {
-    // Check if jsPDF is already loaded
-    if (typeof jspdf === 'undefined') {
-        // If not loaded, dynamically load jsPDF library
-        var script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-        script.onload = function() {
-            // Once loaded, create the PDF
-            createAndDownloadPDF();
-        };
-        script.onerror = function() {
-            alert('Failed to load PDF library. Please try the text option instead.');
-        };
-        document.body.appendChild(script);
+    // First check if we need to load libraries
+    if (typeof jspdf === 'undefined' || typeof Chart === 'undefined' || typeof html2canvas === 'undefined') {
+        loadPDFDependencies().then(() => {
+            generateVisualPDF();
+        }).catch(error => {
+            console.error('Error loading dependencies:', error);
+            alert('Failed to load PDF libraries. Please try again later.');
+        });
     } else {
-        // If already loaded, create the PDF directly
-        createAndDownloadPDF();
+        // Libraries already loaded
+        generateVisualPDF();
     }
 }
 
-function createAndDownloadPDF() {
-    try {
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
+// Function to load all required libraries for visual PDF
+function loadPDFDependencies() {
+    return new Promise((resolve, reject) => {
+        let loaded = 0;
+        const requiredLibs = 3; // jspdf, Chart.js, html2canvas
         
-        const title = window.exportSummaryTitle || 'exam_summary';
-        const content = window.exportSummaryContent || '';
-        const lines = content.split('\n');
-        
-        // Add title
-        doc.setFontSize(16);
-        doc.text('Exam Summary', 20, 20);
-        
-        // Add content
-        doc.setFontSize(12);
-        let y = 30;
-        for (let line of lines) {
-            // Check if we need a new page
-            if (y > 280) {
-                doc.addPage();
-                y = 20;
-            }
-            doc.text(line, 20, y);
-            y += 7;
+        // Load jsPDF if needed
+        if (typeof jspdf === 'undefined') {
+            const jsPdfScript = document.createElement('script');
+            jsPdfScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+            jsPdfScript.onload = () => { if (++loaded === requiredLibs) resolve(); };
+            jsPdfScript.onerror = reject;
+            document.body.appendChild(jsPdfScript);
+        } else {
+            loaded++;
         }
         
-        // Save the PDF
-        doc.save(`${title}.pdf`);
+        // Load Chart.js if needed
+        if (typeof Chart === 'undefined') {
+            const chartScript = document.createElement('script');
+            chartScript.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+            chartScript.onload = () => { if (++loaded === requiredLibs) resolve(); };
+            chartScript.onerror = reject;
+            document.body.appendChild(chartScript);
+        } else {
+            loaded++;
+        }
+        
+        // Load html2canvas if needed
+        if (typeof html2canvas === 'undefined') {
+            const canvasScript = document.createElement('script');
+            canvasScript.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+            canvasScript.onload = () => { if (++loaded === requiredLibs) resolve(); };
+            canvasScript.onerror = reject;
+            document.body.appendChild(canvasScript);
+        } else {
+            loaded++;
+        }
+        
+        // If all libraries are already loaded
+        if (loaded === requiredLibs) {
+            resolve();
+        }
+    });
+}
+
+// Main function to generate visual PDF
+function generateVisualPDF() {
+    // Get the analytics report data first
+    const analyticsData = generateAnalyticsReport();
+    
+    // Create container for charts
+    const chartsContainer = document.createElement('div');
+    chartsContainer.style.position = 'absolute';
+    chartsContainer.style.left = '-9999px';
+    chartsContainer.style.width = '600px';
+    chartsContainer.innerHTML = `
+        <div id="timeChart" style="width:600px;height:300px;background:white;">
+            <canvas id="timeDistribution" width="600" height="300"></canvas>
+        </div>
+        <div id="visitsChart" style="width:600px;height:300px;margin-top:20px;background:white;">
+            <canvas id="questionVisits" width="600" height="300"></canvas>
+        </div>
+    `;
+    document.body.appendChild(chartsContainer);
+    
+    // Create data for time distribution chart
+    const timeLabels = [];
+    const timeData = [];
+    examAnalytics.questions.forEach((q, i) => {
+        timeLabels.push('Q' + (i+1));
+        timeData.push(Math.round(q.timeSpent * 10) / 10);
+    });
+    
+    // Create time distribution chart
+    const timeCtx = document.getElementById('timeDistribution').getContext('2d');
+    const timeChart = new Chart(timeCtx, {
+        type: 'bar',
+        data: {
+            labels: timeLabels,
+            datasets: [{
+                label: 'Time spent (seconds)',
+                data: timeData,
+                backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Time Spent Per Question',
+                    font: { size: 16 }
+                },
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Seconds'
+                    }
+                }
+            }
+        }
+    });
+    
+    // Create data for visits chart
+    const visitLabels = [];
+    const visitData = [];
+    const changeData = [];
+    examAnalytics.questions.forEach((q, i) => {
+        visitLabels.push('Q' + (i+1));
+        visitData.push(q.visits);
+        changeData.push(q.answerChanges);
+    });
+    
+    // Create visits chart
+    const visitsCtx = document.getElementById('questionVisits').getContext('2d');
+    const visitsChart = new Chart(visitsCtx, {
+        type: 'bar',
+        data: {
+            labels: visitLabels,
+            datasets: [
+                {
+                    label: 'Visits',
+                    data: visitData,
+                    backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Answer Changes',
+                    data: changeData,
+                    backgroundColor: 'rgba(255, 159, 64, 0.7)',
+                    borderColor: 'rgba(255, 159, 64, 1)',
+                    borderWidth: 1
+                }
+            ]
+        },
+        options: {
+            responsive: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Question Visits & Answer Changes',
+                    font: { size: 16 }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Count'
+                    }
+                }
+            }
+        }
+    });
+    
+    // Wait for charts to render, then create PDF
+    setTimeout(() => {
+        // We'll create the PDF after the charts have been rendered
+        createPDFWithCharts(chartsContainer, analyticsData);
+    }, 200);
+}
+
+// Function to create PDF with charts
+function createPDFWithCharts(chartsContainer, analyticsData) {
+    try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: 'a4'
+        });
+        
+        const title = window.exportSummaryTitle || 'exam_summary';
+        
+        // Add header
+        doc.setFontSize(20);
+        doc.setTextColor(33, 150, 243); // Blue header
+        doc.text('Exam Summary Report', 105, 15, { align: 'center' });
+        
+        // Add exam details
+        doc.setFontSize(12);
+        doc.setTextColor(68, 68, 68); // Dark gray
+        doc.text(`Exam: ${exam.name}`, 15, 25);
+        doc.text(`Date: ${new Date().toLocaleDateString()}`, 15, 30);
+        doc.text(`Total Questions: ${exam.questioncount}`, 15, 35);
+        
+        // Add response summary
+        doc.setFontSize(16);
+        doc.setTextColor(33, 150, 243);
+        doc.text('Response Summary', 15, 45);
+        
+        // Calculate stats
+        const answered = questionStatus.filter(s => s === 'answered').length;
+        const notAnswered = questionStatus.filter(s => s === 'not-answered').length;
+        const notVisited = questionStatus.filter(s => s === 'not-visited').length;
+        const marked = questionStatus.filter(s => s === 'marked').length;
+        const answeredMarked = questionStatus.filter(s => s === 'answered-marked').length;
+        
+        // Add stats in a box
+        doc.setDrawColor(220, 220, 220); // Light gray border
+        doc.setFillColor(248, 248, 248); // Light background
+        doc.roundedRect(15, 50, 180, 40, 3, 3, 'FD');
+        
+        doc.setFontSize(11);
+        doc.setTextColor(68, 68, 68);
+        doc.text(`Answered: ${answered}`, 25, 60);
+        doc.text(`Not Answered: ${notAnswered}`, 25, 67);
+        doc.text(`Not Visited: ${notVisited}`, 25, 74);
+        doc.text(`Marked for Review: ${marked}`, 105, 60);
+        doc.text(`Answered & Marked: ${answeredMarked}`, 105, 67);
+        
+        // Add time analysis section
+        doc.setFontSize(16);
+        doc.setTextColor(33, 150, 243);
+        doc.text('Time Analysis', 15, 100);
+        
+        // Convert time chart to image
+        html2canvas(document.getElementById('timeChart')).then(canvas => {
+            // Add time distribution chart
+            const timeImgData = canvas.toDataURL('image/png');
+            doc.addImage(timeImgData, 'PNG', 15, 105, 180, 90);
+            
+            // Add statistics text below chart
+            doc.setFontSize(11);
+            doc.setTextColor(68, 68, 68);
+            
+            // Format total duration properly using the analytics data
+            const totalMinutes = Math.floor(analyticsData.totalDuration / 60);
+            const totalSeconds = analyticsData.totalDuration % 60;
+            doc.text(`Total Duration: ${totalMinutes} minutes ${totalSeconds} seconds`, 15, 200);
+            
+            // Average time per question (from analytics data)
+            doc.text(`Average Time Per Question: ${analyticsData.averageTimePerQuestion} seconds`, 15, 206);
+            
+            // Question that took the most time
+            doc.text(`Question Taking Most Time: Question ${analyticsData.longestQuestion.number} (${analyticsData.longestQuestion.time} seconds)`, 15, 212);
+            
+            // Add second page
+            doc.addPage();
+            
+            // Add visit analysis header on second page
+            doc.setFontSize(16);
+            doc.setTextColor(33, 150, 243);
+            doc.text('Question Interaction Analysis', 15, 15);
+            
+            // Convert visits chart to image
+            html2canvas(document.getElementById('visitsChart')).then(visitsCanvas => {
+                // Add visits chart
+                const visitsImgData = visitsCanvas.toDataURL('image/png');
+                doc.addImage(visitsImgData, 'PNG', 15, 20, 180, 90);
+                
+                // Add security section if applicable
+                if (securityViolations.tabSwitches > 0) {
+                    doc.setFontSize(16);
+                    doc.setTextColor(244, 67, 54); // Red for security
+                    doc.text('Security Log', 15, 120);
+                    
+                    doc.setFillColor(255, 243, 224); // Light warning background
+                    doc.roundedRect(15, 125, 180, 15 + (securityViolations.logs.length * 7), 3, 3, 'F');
+                    
+                    doc.setFontSize(11);
+                    doc.setTextColor(68, 68, 68);
+                    doc.text(`Tab switches detected: ${securityViolations.tabSwitches}`, 20, 135);
+                    
+                    // Add security log entries
+                    let yPos = 142;
+                    securityViolations.logs.forEach(log => {
+                        doc.text(`${log.time} - ${log.type} on Question ${log.question}`, 20, yPos);
+                        yPos += 7;
+                    });
+                }
+                
+                // Add individual responses section
+                doc.setFontSize(16);
+                doc.setTextColor(33, 150, 243);
+                doc.text('Question Responses', 15, 170);
+                
+                // Create a simplified table of responses
+                let responseY = 180;
+                let responsesPerPage = 25;
+                let responseCount = 0;
+                
+                for (let i = 0; i < exam.questioncount; i++) {
+                    if (responseCount >= responsesPerPage) {
+                        doc.addPage();
+                        responseY = 20;
+                        responseCount = 0;
+                    }
+                    
+                    const qNum = i + 1;
+                    const qType = questionTypes[i];
+                    const response = userResponses[i];
+                    let responseText = 'NOT ATTEMPTED';
+                    
+                    if (qType === "single-correct" && response && response.answer) {
+                        responseText = response.answer;
+                    } else if (qType === "multi-correct" && response && response.answers && response.answers.length > 0) {
+                        responseText = response.answers.join(' ');
+                    } else if (qType === "numerical" && response && response.value) {
+                        responseText = response.value;
+                    }
+                    
+                    // Alternate background for better readability
+                    if (responseCount % 2 === 0) {
+                        doc.setFillColor(248, 248, 248);
+                        doc.rect(15, responseY - 4, 180, 7, 'F');
+                    }
+                    
+                    doc.setFontSize(10);
+                    doc.setTextColor(68, 68, 68);
+                    doc.text(`Q${qNum}`, 20, responseY);
+                    doc.text(getQuestionTypeLabel(qType), 40, responseY);
+                    doc.text(responseText, 100, responseY);
+                    doc.text(questionStatus[i], 160, responseY);
+                    
+                    responseY += 7;
+                    responseCount++;
+                }
+                
+                // Clean up
+                document.body.removeChild(chartsContainer);
+                
+                // Save the PDF
+                doc.save(`${title}.pdf`);
+            });
+        });
     } catch (error) {
         console.error('Error creating PDF:', error);
-        alert('Could not create PDF. Falling back to text download.');
+        alert('Could not create visual PDF. Falling back to text download.');
         saveAsText();
     }
 }
@@ -827,10 +1673,10 @@ function showQuestionUploadInterface() {
             <div class="form-group">
                 <span class="instruction-text">Question Type</span>
                 <select id="current-question-type" class="question-type-select">
-                    <option value="single-correct">Single Option Correct</option>
-                    <option value="multi-correct">Multiple Options Correct</option>
-                    <option value="numerical">Numerical</option>
-                </select>
+            <option value="single-correct">Single Option Correct</option>
+            <option value="multi-correct">Multiple Options Correct</option>
+            <option value="numerical">Numerical</option>
+        </select>
             </div>
             
             <div class="form-group">
@@ -930,6 +1776,9 @@ function updateUserResponse() {
         userResponses[qIndex] = {};
     }
     
+    // Track previous response for change detection
+    const previousResponse = JSON.stringify(userResponses[qIndex]);
+    
     if (qType === 'single-correct') {
         // For single correct, store the selected option
         const options = ['A', 'B', 'C', 'D'];
@@ -963,5 +1812,11 @@ function updateUserResponse() {
         
         userResponses[qIndex].type = 'numerical';
         userResponses[qIndex].value = element ? element.value : '';
+    }
+    
+    // Check if response changed and record analytics if it did
+    const currentResponse = JSON.stringify(userResponses[qIndex]);
+    if (previousResponse !== currentResponse) {
+        recordResponseChange(qIndex, userResponses[qIndex]);
     }
 }

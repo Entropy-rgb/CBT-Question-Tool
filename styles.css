@@ -179,7 +179,7 @@ header h1 {
   font-size: 0.9rem;
   font-weight: 500;
   border-radius: 4px;
-  cursor: pointer;
+    cursor: pointer;
   background: var(--not-visited-bg);
   color: var(--text-primary);
   transition: all 0.2s ease;
@@ -572,8 +572,8 @@ input[type="checkbox"]:checked::after {
   .question-item {
     padding: 15px;
   }
-  
-  #work-area {
+
+#work-area {
     padding: 15px;
   }
 }
