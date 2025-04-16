@@ -726,13 +726,18 @@ function renderQuestionPalette() {
 }
 
 function navigateQuestion(direction) {
-    updateQuestionStatus();
-    
-    // Save analytics for current question
-    endQuestionVisit(currentQuestion - 1);
-    
-    // Make sure to save the current response before navigating
-    updateUserResponse();
+    try {
+        updateQuestionStatus();
+        
+        // Save analytics for current question
+        endQuestionVisit(currentQuestion - 1);
+        
+        // Make sure to save the current response before navigating
+        updateUserResponse();
+    } catch (error) {
+        console.error("Error saving question data:", error);
+        // Continue with navigation even if there's an error with saving data
+    }
     
     if (direction === 'next' && currentQuestion < exam.questioncount) {
         currentQuestion++;
@@ -746,7 +751,11 @@ function navigateQuestion(direction) {
     }
     
     // Start tracking new current question
-    recordQuestionVisit(currentQuestion - 1);
+    try {
+        recordQuestionVisit(currentQuestion - 1);
+    } catch (error) {
+        console.error("Error recording question visit:", error);
+    }
     
     renderExamInterface();
 }
@@ -1319,129 +1328,149 @@ function loadPDFDependencies() {
 
 // Main function to generate visual PDF
 function generateVisualPDF() {
-    // Get the analytics report data first
-    const analyticsData = generateAnalyticsReport();
-    
-    // Create container for charts
-    const chartsContainer = document.createElement('div');
-    chartsContainer.style.position = 'absolute';
-    chartsContainer.style.left = '-9999px';
-    chartsContainer.style.width = '600px';
-    chartsContainer.innerHTML = `
-        <div id="timeChart" style="width:600px;height:300px;background:white;">
-            <canvas id="timeDistribution" width="600" height="300"></canvas>
-        </div>
-        <div id="visitsChart" style="width:600px;height:300px;margin-top:20px;background:white;">
-            <canvas id="questionVisits" width="600" height="300"></canvas>
-        </div>
-    `;
-    document.body.appendChild(chartsContainer);
-    
-    // Create data for time distribution chart
-    const timeLabels = [];
-    const timeData = [];
-    examAnalytics.questions.forEach((q, i) => {
-        timeLabels.push('Q' + (i+1));
-        timeData.push(Math.round(q.timeSpent * 10) / 10);
-    });
-    
-    // Create time distribution chart
-    const timeCtx = document.getElementById('timeDistribution').getContext('2d');
-    const timeChart = new Chart(timeCtx, {
-        type: 'bar',
-        data: {
-            labels: timeLabels,
-            datasets: [{
-                label: 'Time spent (seconds)',
-                data: timeData,
-                backgroundColor: 'rgba(54, 162, 235, 0.7)',
-                borderColor: 'rgba(54, 162, 235, 1)',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: false,
-            plugins: {
-                title: {
-                    display: true,
-                    text: 'Time Spent Per Question',
-                    font: { size: 16 }
+    try {
+        // Get the analytics report data first
+        const analyticsData = generateAnalyticsReport();
+        
+        // Create container for charts
+        const chartsContainer = document.createElement('div');
+        chartsContainer.style.position = 'absolute';
+        chartsContainer.style.left = '-9999px';
+        chartsContainer.style.width = '600px';
+        chartsContainer.innerHTML = `
+            <div id="timeChart" style="width:600px;height:300px;background:white;">
+                <canvas id="timeDistribution" width="600" height="300"></canvas>
+            </div>
+            <div id="visitsChart" style="width:600px;height:300px;margin-top:20px;background:white;">
+                <canvas id="questionVisits" width="600" height="300"></canvas>
+            </div>
+        `;
+        document.body.appendChild(chartsContainer);
+        
+        // Create data for time distribution chart
+        const timeLabels = [];
+        const timeData = [];
+        
+        // Check if examAnalytics.questions exists and has data before using it
+        if (examAnalytics.questions && examAnalytics.questions.length > 0) {
+            examAnalytics.questions.forEach((q, i) => {
+                timeLabels.push('Q' + (i+1));
+                timeData.push(Math.round(q.timeSpent * 10) / 10);
+            });
+            
+            // Create time distribution chart
+            const timeCtx = document.getElementById('timeDistribution').getContext('2d');
+            const timeChart = new Chart(timeCtx, {
+                type: 'bar',
+                data: {
+                    labels: timeLabels,
+                    datasets: [{
+                        label: 'Time spent (seconds)',
+                        data: timeData,
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
                 },
-                legend: {
-                    display: false
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: {
-                        display: true,
-                        text: 'Seconds'
+                options: {
+                    responsive: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Time Spent Per Question',
+                            font: { size: 16 }
+                        },
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Seconds'
+                            }
+                        }
                     }
                 }
-            }
-        }
-    });
-    
-    // Create data for visits chart
-    const visitLabels = [];
-    const visitData = [];
-    const changeData = [];
-    examAnalytics.questions.forEach((q, i) => {
-        visitLabels.push('Q' + (i+1));
-        visitData.push(q.visits);
-        changeData.push(q.answerChanges);
-    });
-    
-    // Create visits chart
-    const visitsCtx = document.getElementById('questionVisits').getContext('2d');
-    const visitsChart = new Chart(visitsCtx, {
-        type: 'bar',
-        data: {
-            labels: visitLabels,
-            datasets: [
-                {
-                    label: 'Visits',
-                    data: visitData,
-                    backgroundColor: 'rgba(75, 192, 192, 0.7)',
-                    borderColor: 'rgba(75, 192, 192, 1)',
-                    borderWidth: 1
+            });
+            
+            // Create data for visits chart
+            const visitLabels = [];
+            const visitData = [];
+            const changeData = [];
+            examAnalytics.questions.forEach((q, i) => {
+                visitLabels.push('Q' + (i+1));
+                visitData.push(q.visits);
+                changeData.push(q.answerChanges);
+            });
+            
+            // Create visits chart
+            const visitsCtx = document.getElementById('questionVisits').getContext('2d');
+            const visitsChart = new Chart(visitsCtx, {
+                type: 'bar',
+                data: {
+                    labels: visitLabels,
+                    datasets: [
+                        {
+                            label: 'Visits',
+                            data: visitData,
+                            backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Answer Changes',
+                            data: changeData,
+                            backgroundColor: 'rgba(255, 159, 64, 0.7)',
+                            borderColor: 'rgba(255, 159, 64, 1)',
+                            borderWidth: 1
+                        }
+                    ]
                 },
-                {
-                    label: 'Answer Changes',
-                    data: changeData,
-                    backgroundColor: 'rgba(255, 159, 64, 0.7)',
-                    borderColor: 'rgba(255, 159, 64, 1)',
-                    borderWidth: 1
-                }
-            ]
-        },
-        options: {
-            responsive: false,
-            plugins: {
-                title: {
-                    display: true,
-                    text: 'Question Visits & Answer Changes',
-                    font: { size: 16 }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: {
-                        display: true,
-                        text: 'Count'
+                options: {
+                    responsive: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Question Visits & Answer Changes',
+                            font: { size: 16 }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Count'
+                            }
+                        }
                     }
                 }
-            }
+            });
+            
+            // Wait for charts to render, then create PDF
+            setTimeout(() => {
+                // We'll create the PDF after the charts have been rendered
+                createPDFWithCharts(chartsContainer, analyticsData);
+            }, 200);
+        } else {
+            console.error("No analytics data available for charts");
+            // Create a simpler PDF without charts
+            createPDFWithoutCharts(analyticsData);
         }
-    });
-    
-    // Wait for charts to render, then create PDF
-    setTimeout(() => {
-        // We'll create the PDF after the charts have been rendered
-        createPDFWithCharts(chartsContainer, analyticsData);
-    }, 200);
+    } catch (error) {
+        console.error("Error generating visual PDF:", error);
+        alert("Error generating visual PDF. Creating a simpler version instead.");
+        try {
+            // Create a simpler PDF without charts
+            createSimplePDF();
+        } catch (simpleError) {
+            console.error("Could not create PDF:", simpleError);
+            alert("Failed to create PDF. Please try again.");
+        }
+    }
 }
 
 // Function to create PDF with charts
@@ -1609,33 +1638,219 @@ function createPDFWithCharts(chartsContainer, analyticsData) {
             });
         });
     } catch (error) {
-        console.error('Error creating PDF:', error);
-        alert('Could not create visual PDF. Falling back to text download.');
-        saveAsText();
+        console.error('Error creating PDF with charts:', error);
+        alert('Could not create visual PDF. Creating a simpler version instead.');
+        // Try creating a PDF without charts as fallback
+        createPDFWithoutCharts(analyticsData);
     }
 }
 
-// Function to save summary as text file
-function saveAsText() {
+// Function to create a simple PDF without charts when analytics data is missing
+function createPDFWithoutCharts(analyticsData) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+    });
+    
     const title = window.exportSummaryTitle || 'exam_summary';
-    const content = window.exportSummaryContent || '';
     
-    // Create blob and download link
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
+    // Add header
+    doc.setFontSize(20);
+    doc.setTextColor(33, 150, 243); // Blue header
+    doc.text('Exam Summary Report', 105, 15, { align: 'center' });
     
-    // Create download link and click it
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${title}.txt`;
-    document.body.appendChild(a);
-    a.click();
+    // Add exam details
+    doc.setFontSize(12);
+    doc.setTextColor(68, 68, 68); // Dark gray
+    doc.text(`Exam: ${exam.name}`, 15, 25);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 15, 30);
+    doc.text(`Total Questions: ${exam.questioncount}`, 15, 35);
     
-    // Clean up
-    setTimeout(function() {
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-    }, 100);
+    // Add response summary
+    doc.setFontSize(16);
+    doc.setTextColor(33, 150, 243);
+    doc.text('Response Summary', 15, 45);
+    
+    // Calculate stats
+    const answered = questionStatus.filter(s => s === 'answered').length;
+    const notAnswered = questionStatus.filter(s => s === 'not-answered').length;
+    const notVisited = questionStatus.filter(s => s === 'not-visited').length;
+    const marked = questionStatus.filter(s => s === 'marked').length;
+    const answeredMarked = questionStatus.filter(s => s === 'answered-marked').length;
+    
+    // Add stats in a box
+    doc.setDrawColor(220, 220, 220); // Light gray border
+    doc.setFillColor(248, 248, 248); // Light background
+    doc.roundedRect(15, 50, 180, 40, 3, 3, 'FD');
+    
+    doc.setFontSize(11);
+    doc.setTextColor(68, 68, 68);
+    doc.text(`Answered: ${answered}`, 25, 60);
+    doc.text(`Not Answered: ${notAnswered}`, 25, 67);
+    doc.text(`Not Visited: ${notVisited}`, 25, 74);
+    doc.text(`Marked for Review: ${marked}`, 105, 60);
+    doc.text(`Answered & Marked: ${answeredMarked}`, 105, 67);
+    
+    // Add time analysis section
+    doc.setFontSize(16);
+    doc.setTextColor(33, 150, 243);
+    doc.text('Time Analysis', 15, 100);
+    
+    // Convert time chart to image
+    html2canvas(document.getElementById('timeChart')).then(canvas => {
+        // Add time distribution chart
+        const timeImgData = canvas.toDataURL('image/png');
+        doc.addImage(timeImgData, 'PNG', 15, 105, 180, 90);
+        
+        // Add statistics text below chart
+        doc.setFontSize(11);
+        doc.setTextColor(68, 68, 68);
+        
+        // Format total duration properly using the analytics data
+        const totalMinutes = Math.floor(analyticsData.totalDuration / 60);
+        const totalSeconds = analyticsData.totalDuration % 60;
+        doc.text(`Total Duration: ${totalMinutes} minutes ${totalSeconds} seconds`, 15, 200);
+        
+        // Average time per question (from analytics data)
+        doc.text(`Average Time Per Question: ${analyticsData.averageTimePerQuestion} seconds`, 15, 206);
+        
+        // Question that took the most time
+        doc.text(`Question Taking Most Time: Question ${analyticsData.longestQuestion.number} (${analyticsData.longestQuestion.time} seconds)`, 15, 212);
+        
+        // Add second page
+        doc.addPage();
+        
+        // Add visit analysis header on second page
+        doc.setFontSize(16);
+        doc.setTextColor(33, 150, 243);
+        doc.text('Question Interaction Analysis', 15, 15);
+        
+        // Convert visits chart to image
+        html2canvas(document.getElementById('visitsChart')).then(visitsCanvas => {
+            // Add visits chart
+            const visitsImgData = visitsCanvas.toDataURL('image/png');
+            doc.addImage(visitsImgData, 'PNG', 15, 20, 180, 90);
+            
+            // Add security section if applicable
+            if (securityViolations.tabSwitches > 0) {
+                doc.setFontSize(16);
+                doc.setTextColor(244, 67, 54); // Red for security
+                doc.text('Security Log', 15, 120);
+                
+                doc.setFillColor(255, 243, 224); // Light warning background
+                doc.roundedRect(15, 125, 180, 15 + (securityViolations.logs.length * 7), 3, 3, 'F');
+                
+                doc.setFontSize(11);
+                doc.setTextColor(68, 68, 68);
+                doc.text(`Tab switches detected: ${securityViolations.tabSwitches}`, 20, 135);
+                
+                // Add security log entries
+                let yPos = 142;
+                securityViolations.logs.forEach(log => {
+                    doc.text(`${log.time} - ${log.type} on Question ${log.question}`, 20, yPos);
+                    yPos += 7;
+                });
+            }
+            
+            // Add individual responses section
+            doc.setFontSize(16);
+            doc.setTextColor(33, 150, 243);
+            doc.text('Question Responses', 15, 170);
+            
+            // Create a simplified table of responses
+            let responseY = 180;
+            let responsesPerPage = 25;
+            let responseCount = 0;
+            
+            for (let i = 0; i < exam.questioncount; i++) {
+                if (responseCount >= responsesPerPage) {
+                    doc.addPage();
+                    responseY = 20;
+                    responseCount = 0;
+                }
+                
+                const qNum = i + 1;
+                const qType = questionTypes[i];
+                const response = userResponses[i];
+                let responseText = 'NOT ATTEMPTED';
+                
+                if (qType === "single-correct" && response && response.answer) {
+                    responseText = response.answer;
+                } else if (qType === "multi-correct" && response && response.answers && response.answers.length > 0) {
+                    responseText = response.answers.join(' ');
+                } else if (qType === "numerical" && response && response.value) {
+                    responseText = response.value;
+                }
+                
+                // Alternate background for better readability
+                if (responseCount % 2 === 0) {
+                    doc.setFillColor(248, 248, 248);
+                    doc.rect(15, responseY - 4, 180, 7, 'F');
+                }
+                
+                doc.setFontSize(10);
+                doc.setTextColor(68, 68, 68);
+                doc.text(`Q${qNum}`, 20, responseY);
+                doc.text(getQuestionTypeLabel(qType), 40, responseY);
+                doc.text(responseText, 100, responseY);
+                doc.text(questionStatus[i], 160, responseY);
+                
+                responseY += 7;
+                responseCount++;
+            }
+            
+            // Clean up
+            document.body.removeChild(chartsContainer);
+            
+            // Save the PDF
+            doc.save(`${title}.pdf`);
+        });
+    });
+}
+
+// Function to create a very simple PDF when everything else fails
+function createSimplePDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const title = window.exportSummaryTitle || 'exam_summary';
+    
+    doc.setFontSize(16);
+    doc.text('Exam Summary', 105, 20, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text(`Exam: ${exam.name}`, 20, 30);
+    doc.text(`Total Questions: ${exam.questioncount}`, 20, 40);
+    
+    // Add simple list of responses
+    doc.text('Your Responses:', 20, 50);
+    let y = 60;
+    
+    for (let i = 0; i < exam.questioncount; i++) {
+        if (y > 270) {
+            doc.addPage();
+            y = 20;
+        }
+        
+        const qNum = i + 1;
+        const response = userResponses[i];
+        let responseText = 'NOT ATTEMPTED';
+        
+        if (response) {
+            if (response.type === 'single-correct' && response.answer) {
+                responseText = response.answer;
+            } else if (response.type === 'multi-correct' && response.answers && response.answers.length > 0) {
+                responseText = response.answers.join(' ');
+            } else if (response.type === 'numerical' && response.value) {
+                responseText = response.value;
+            }
+        }
+        
+        doc.text(`Question ${qNum}: ${responseText}`, 20, y);
+        y += 10;
+    }
+    
+    doc.save(`${title}.pdf`);
 }
 
 // New function to set up the question upload process
@@ -1759,6 +1974,14 @@ function finishQuestionUpload() {
     currentQuestion = 1;
     questionStatus[0] = 'not-answered';
     
+    // Make sure analytics are properly initialized
+    try {
+        initializeAnalytics();
+        recordQuestionVisit(0); // Start tracking first question
+    } catch (error) {
+        console.error("Error initializing analytics:", error);
+    }
+    
     // Start the exam timer
     startTimer(exam.time);
     
@@ -1819,4 +2042,27 @@ function updateUserResponse() {
     if (previousResponse !== currentResponse) {
         recordResponseChange(qIndex, userResponses[qIndex]);
     }
+}
+
+// Function to save summary as text file
+function saveAsText() {
+    const title = window.exportSummaryTitle || 'exam_summary';
+    const content = window.exportSummaryContent || '';
+    
+    // Create blob and download link
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    
+    // Create download link and click it
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    
+    // Clean up
+    setTimeout(function() {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }, 100);
 }
