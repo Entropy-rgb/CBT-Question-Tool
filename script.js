@@ -637,6 +637,8 @@ function renderCurrentQuestion() {
 }
 
 function renderAnswerOptions(qNum, type) {
+    const qIndex = qNum - 1;
+    
     switch (type) {
         case "single-correct":
             return `
@@ -694,13 +696,44 @@ function renderAnswerOptions(qNum, type) {
 }
 
 function isOptionChecked(qNum, option) {
+    // First, try to check the actual DOM element
     const element = document.getElementById(`question-${qNum}-${option}`);
-    return element && element.checked;
+    if (element && element.checked) {
+        return true;
+    }
+    
+    // If DOM element is not checked or not available, check userResponses
+    const qIndex = qNum - 1;
+    if (userResponses[qIndex]) {
+        const qType = questionTypes[qIndex];
+        if (qType === 'single-correct' && userResponses[qIndex].answer === option) {
+            return true;
+        } else if (qType === 'multi-correct' && 
+                  userResponses[qIndex].answers && 
+                  userResponses[qIndex].answers.includes(option)) {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 function getNumericalAnswer(qNum) {
+    // First, try to get value from the DOM element
     const element = document.getElementById(`question-${qNum}`);
-    return element ? element.value : '';
+    if (element && element.value !== '') {
+        return element.value;
+    }
+    
+    // If DOM element has no value or is not available, check userResponses
+    const qIndex = qNum - 1;
+    if (userResponses[qIndex] && 
+        userResponses[qIndex].type === 'numerical' && 
+        userResponses[qIndex].value) {
+        return userResponses[qIndex].value;
+    }
+    
+    return '';
 }
 
 function getQuestionTypeLabel(type) {
@@ -730,15 +763,109 @@ function renderQuestionPalette() {
     return paletteHTML;
 }
 
+// First, let's add a function that safely checks the answer status without modifying question status
+function hasAnswerForQuestion(qIndex) {
+    const qType = questionTypes[qIndex];
+    let hasAnswer = false;
+    
+    // For user responses that are already stored
+    if (userResponses[qIndex]) {
+        if (qType === 'single-correct' && userResponses[qIndex].answer) {
+            return true;
+        } else if (qType === 'multi-correct' && 
+                  userResponses[qIndex].answers && 
+                  userResponses[qIndex].answers.length > 0) {
+            return true;
+        } else if (qType === 'numerical' && 
+                  userResponses[qIndex].value && 
+                  userResponses[qIndex].value !== '') {
+            return true;
+        }
+    }
+    
+    // For current question, check DOM elements directly
+    if (qIndex === currentQuestion - 1) {
+        if (qType === 'single-correct' || qType === 'multi-correct') {
+            const options = ['A', 'B', 'C', 'D'];
+            for (let option of options) {
+                const element = document.getElementById(`question-${currentQuestion}-${option}`);
+                if (element && element.checked) {
+                    hasAnswer = true;
+                    break;
+                }
+            }
+        } else if (qType === 'numerical') {
+            const element = document.getElementById(`question-${currentQuestion}`);
+            hasAnswer = element && element.value !== '';
+        }
+    }
+    
+    return hasAnswer;
+}
+
+// Now update the goToQuestion function to be more careful about preserving marked status
+function goToQuestion(qNum) {
+    if (qNum < 1 || qNum > exam.questioncount) return;
+    
+    // Save current question's response
+    updateUserResponse();
+    
+    // Save analytics for current question
+    endQuestionVisit(currentQuestion - 1);
+    
+    // Before changing the current question, update its status carefully
+    const currentIdx = currentQuestion - 1;
+    const currentStatus = questionStatus[currentIdx];
+    const hasAnswerCurrent = hasAnswerForQuestion(currentIdx);
+    
+    // Update the current question's status without disturbing marked status
+    if (currentStatus === 'marked' && hasAnswerCurrent) {
+        questionStatus[currentIdx] = 'answered-marked';
+    } else if (currentStatus === 'answered-marked' && !hasAnswerCurrent) {
+        questionStatus[currentIdx] = 'marked';
+    } else if (currentStatus !== 'marked' && currentStatus !== 'answered-marked') {
+        questionStatus[currentIdx] = hasAnswerCurrent ? 'answered' : 'not-answered';
+    }
+    // In all other cases, preserve the current status
+    
+    // Set the new current question
+    currentQuestion = qNum;
+    
+    // If this question hasn't been visited yet, mark it as not-answered
+    if (questionStatus[currentQuestion-1] === 'not-visited') {
+        questionStatus[currentQuestion-1] = 'not-answered';
+    }
+    
+    // Start tracking new current question
+    recordQuestionVisit(currentQuestion - 1);
+    
+    renderExamInterface();
+}
+
+// Update navigateQuestion to use same careful status preservation logic
 function navigateQuestion(direction) {
     try {
-        updateQuestionStatus();
+        // Save current question's response
+        updateUserResponse();
         
         // Save analytics for current question
         endQuestionVisit(currentQuestion - 1);
         
-        // Make sure to save the current response before navigating
-        updateUserResponse();
+        // Carefully update the current question's status
+        const currentIdx = currentQuestion - 1;
+        const currentStatus = questionStatus[currentIdx];
+        const hasAnswerCurrent = hasAnswerForQuestion(currentIdx);
+        
+        // Update the current question's status without disturbing marked status
+        if (currentStatus === 'marked' && hasAnswerCurrent) {
+            questionStatus[currentIdx] = 'answered-marked';
+        } else if (currentStatus === 'answered-marked' && !hasAnswerCurrent) {
+            questionStatus[currentIdx] = 'marked';
+        } else if (currentStatus !== 'marked' && currentStatus !== 'answered-marked') {
+            questionStatus[currentIdx] = hasAnswerCurrent ? 'answered' : 'not-answered';
+        }
+        // In all other cases, preserve the current status
+        
     } catch (error) {
         console.error("Error saving question data:", error);
         // Continue with navigation even if there's an error with saving data
@@ -765,28 +892,11 @@ function navigateQuestion(direction) {
     renderExamInterface();
 }
 
-function goToQuestion(qNum) {
-    if (qNum < 1 || qNum > exam.questioncount) return;
-    
-    updateQuestionStatus();
-    
-    // Save analytics for current question
-    endQuestionVisit(currentQuestion - 1);
-    
-    // Make sure to save the current response before navigating
-    updateUserResponse();
-    
-    currentQuestion = qNum;
-    
-    // If this question hasn't been visited yet, mark it as not-answered
-    if (questionStatus[currentQuestion-1] === 'not-visited') {
-        questionStatus[currentQuestion-1] = 'not-answered';
-    }
-    
-    // Start tracking new current question
-    recordQuestionVisit(currentQuestion - 1);
-    
-    renderExamInterface();
+// Replace the updateQuestionStatus function with this safer version that just returns status without modifying it
+function updateQuestionStatus() {
+    // This function is now replaced by inline status handling in goToQuestion and navigateQuestion
+    // This is left as a stub in case other parts of the code call it
+    console.log("updateQuestionStatus is deprecated - status is now handled directly in navigation functions");
 }
 
 function markForReview() {
@@ -816,37 +926,6 @@ function markForReview() {
     }
     
     renderExamInterface();
-}
-
-function updateQuestionStatus() {
-    const qType = questionTypes[currentQuestion-1];
-    let hasAnswer = false;
-    
-    if (qType === 'single-correct' || qType === 'multi-correct') {
-        const options = ['A', 'B', 'C', 'D'];
-        for (let option of options) {
-            const element = document.getElementById(`question-${currentQuestion}-${option}`);
-            if (element && element.checked) {
-                hasAnswer = true;
-                break;
-            }
-        }
-    } else if (qType === 'numerical') {
-        const element = document.getElementById(`question-${currentQuestion}`);
-        hasAnswer = element && element.value !== '';
-    }
-    
-    // Only update if not marked for review and not the current status
-    const currentStatus = questionStatus[currentQuestion-1];
-    if (currentStatus !== 'marked' && currentStatus !== 'answered-marked') {
-        questionStatus[currentQuestion-1] = hasAnswer ? 'answered' : 'not-answered';
-    } else if (currentStatus === 'answered-marked' && !hasAnswer) {
-        // If it was answered & marked but the answer was cleared, change to just marked
-        questionStatus[currentQuestion-1] = 'marked';
-    } else if (currentStatus === 'marked' && hasAnswer) {
-        // If it was marked but now has an answer, change to answered & marked
-        questionStatus[currentQuestion-1] = 'answered-marked';
-    }
 }
 
 function addAnswerEventListeners() {
@@ -2255,31 +2334,50 @@ function finishQuestionUpload() {
     renderExamInterface();
 }
 
-// Add this new function to update the user response for the current question
+// Fix the updateUserResponse function to properly store answers
 function updateUserResponse() {
     const qType = questionTypes[currentQuestion-1];
     const qIndex = currentQuestion - 1;
     
     // Initialize the response object if it doesn't exist
     if (!userResponses[qIndex]) {
-        userResponses[qIndex] = {};
+        userResponses[qIndex] = {
+            type: qType, // Ensure type is always set
+        };
+        
+        // Initialize with defaults based on type
+        if (qType === 'single-correct') {
+            userResponses[qIndex].answer = null;
+        } else if (qType === 'multi-correct') {
+            userResponses[qIndex].answers = [];
+        } else if (qType === 'numerical') {
+            userResponses[qIndex].value = '';
+        }
     }
     
     // Track previous response for change detection
     const previousResponse = JSON.stringify(userResponses[qIndex]);
     
+    // Store the current DOM state in userResponses
     if (qType === 'single-correct') {
         // For single correct, store the selected option
         const options = ['A', 'B', 'C', 'D'];
         userResponses[qIndex].type = 'single-correct';
-        userResponses[qIndex].answer = null;
         
+        // Don't reset answer to null here - only overwrite if we find a selected option
+        let found = false;
         for (let option of options) {
             const element = document.getElementById(`question-${currentQuestion}-${option}`);
             if (element && element.checked) {
                 userResponses[qIndex].answer = option;
+                found = true;
                 break;
             }
+        }
+        
+        // Only if no option is selected, set to null
+        if (!found && document.getElementById(`question-${currentQuestion}-A`)) {
+            userResponses[qIndex].answer = null;
         }
     } else if (qType === 'multi-correct') {
         // For multi-correct, store all selected options
@@ -2294,13 +2392,19 @@ function updateUserResponse() {
         }
         
         userResponses[qIndex].type = 'multi-correct';
-        userResponses[qIndex].answers = selectedOptions;
+        
+        // Only update if we have access to the DOM elements
+        if (document.getElementById(`question-${currentQuestion}-A`)) {
+            userResponses[qIndex].answers = selectedOptions;
+        }
     } else if (qType === 'numerical') {
         // For numerical, store the input value
         const element = document.getElementById(`question-${currentQuestion}`);
         
         userResponses[qIndex].type = 'numerical';
-        userResponses[qIndex].value = element ? element.value : '';
+        if (element) { // Only update if the element exists
+            userResponses[qIndex].value = element.value;
+        }
     }
     
     // Check if response changed and record analytics if it did
@@ -2308,6 +2412,9 @@ function updateUserResponse() {
     if (previousResponse !== currentResponse) {
         recordResponseChange(qIndex, userResponses[qIndex]);
     }
+    
+    // Debug output to ensure userResponses is being updated properly
+    console.log(`Updated response for Q${currentQuestion}:`, userResponses[qIndex]);
 }
 
 // Function to save summary as text file
@@ -2332,4 +2439,5 @@ function saveAsText() {
         window.URL.revokeObjectURL(url);
     }, 100);
 }
+
 
